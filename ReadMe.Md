@@ -11,3 +11,5 @@ This repository serves as a professional laboratory for **Agentic Design Pattern
 * **Local Inference:** [Ollama](https://ollama.com/) (Running Qwen2.5-Coder & Phi-3.5)
 * **Environment:** Arch Linux / Windows (Conda)
 * **Memory Layers:** PostgreSQL (Persistence) & Obsidian (Semantic Knowledge)
+
+..
