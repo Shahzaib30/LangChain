@@ -1,9 +1,10 @@
 import streamlit as st
 from psycopg_pool import ConnectionPool
 from langgraph.checkpoint.postgres import PostgresSaver
+from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.graph import StateGraph, START, MessagesState
 from langchain_ollama import ChatOllama
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
 from dotenv import load_dotenv
 import os
 import uuid
@@ -27,11 +28,13 @@ if "current_thread" not in st.session_state:
 
 @st.cache_resource
 def backend():
-    llm = ChatOllama(model="qwen2.5-coder:7b", temperature=0.7)
+    llm = ChatOllama(model="qwen2.5-coder:7b", temperature=0.7, streaming=True)
     
-    def chat_node(state: MessagesState) -> MessagesState:
+    def chat_node(state: MessagesState, config: RunnableConfig) -> MessagesState:
+        # Let LangGraph handle token streaming events from the model.
+        response = llm.invoke(state["messages"], config=config)
         return {
-            "messages" : [llm.invoke(state["messages"])]
+            "messages" : [response]
         }
 
     builder = StateGraph(MessagesState)
@@ -52,10 +55,7 @@ def create_new_chat():
 st.sidebar.title("Agent Controls")
 st.sidebar.write("Change the thread ID to simulate talking to different clients")
     
-if st.sidebar.button("➕ New Chat"):
-    create_new_chat()
-    st.rerun() 
-
+st.sidebar.button("➕ New Chat", on_click=create_new_chat)
 
 thread_id = st.sidebar.text_input(
     "Active Thread ID", 
@@ -90,11 +90,13 @@ with pool.connection() as conn:
         st.chat_message("user").write(user_input)
 
         with st.chat_message("assistant"):
-            with st.spinner("Bot is typing..."):
-
+            def stream_response():
                 input_state = {
                     "messages": [("user", user_input)]
                 }
-                result = graph.invoke(input_state, config)
-                last_message = result["messages"][-1].content
-                st.write(last_message)
+                for chunk, metadata in graph.stream(input_state, config, stream_mode="messages"):
+                    if isinstance(chunk, (AIMessage, AIMessageChunk)) and chunk.content:
+                        if isinstance(chunk.content, str):
+                            yield chunk.content
+            st.write_stream(stream_response())
+
